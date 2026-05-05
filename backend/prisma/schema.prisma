@@ -1,0 +1,225 @@
+// ─────────────────────────────────────────────────────────
+//  Nexus Backend — Prisma Schema
+//  Database: PostgreSQL (swap provider to "sqlite" for local)
+// ─────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ── USER ─────────────────────────────────────────────────
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  grade         String?
+  targetExam    String?
+  examDate      DateTime?
+  avatarUrl     String?
+  points        Int       @default(0)
+  streak        Int       @default(0)
+  lastActiveAt  DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  subjects      Subject[]
+  tasks         Task[]
+  exams         Exam[]
+  moodLogs      MoodLog[]
+  journalEntries JournalEntry[]
+  lifeSkillProgress LifeSkillProgress[]
+  studyRoomMemberships StudyRoomMember[]
+  sentChallenges     Challenge[] @relation("ChallengeFrom")
+  receivedChallenges Challenge[] @relation("ChallengeTo")
+  analyticsEntries   AnalyticsEntry[]
+
+  @@map("users")
+}
+
+// ── SUBJECT ──────────────────────────────────────────────
+model Subject {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  weakTopics   String?  // comma-separated or JSON string
+  hoursPerDay  Float    @default(1.5)
+  targetScore  Int      @default(80)
+  currentScore Int      @default(0)
+  color        String?  // hex color for UI
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks Task[]
+  exams Exam[]
+
+  @@unique([userId, name])
+  @@map("subjects")
+}
+
+// ── TASK ─────────────────────────────────────────────────
+model Task {
+  id         String      @id @default(cuid())
+  userId     String
+  subjectId  String?
+  title      String
+  topic      String?
+  duration   Int         @default(30)  // minutes
+  priority   String      @default("MEDIUM")
+  status     String      @default("PENDING")
+  scheduledFor DateTime?
+  completedAt  DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@map("tasks")
+}
+
+
+
+// ── EXAM ─────────────────────────────────────────────────
+model Exam {
+  id          String   @id @default(cuid())
+  userId      String
+  subjectId   String?
+  title       String
+  examType    String?  // "Unit Test", "Mid-Term", "SAT", etc.
+  examDate    DateTime
+  readiness   Int      @default(0)   // 0–100
+  targetScore Int      @default(80)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@map("exams")
+}
+
+// ── MOOD LOG ─────────────────────────────────────────────
+model MoodLog {
+  id          String   @id @default(cuid())
+  userId      String
+  mood        Int      // 1–7
+  stressLevel Int      // 1–10
+  energyLevel Int?     // 1–10
+  note        String?
+  loggedAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("mood_logs")
+}
+
+// ── JOURNAL ENTRY ────────────────────────────────────────
+model JournalEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  content   String
+  wordCount Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("journal_entries")
+}
+
+// ── LIFE SKILL PROGRESS ──────────────────────────────────
+model LifeSkillProgress {
+  id         String   @id @default(cuid())
+  userId     String
+  lessonId   String   // references static lesson data
+  lessonTitle String
+  category   String
+  progress   Int      @default(0)  // 0–100
+  completedAt DateTime?
+  startedAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@map("life_skill_progress")
+}
+
+// ── STUDY ROOM ───────────────────────────────────────────
+model StudyRoom {
+  id          String   @id @default(cuid())
+  name        String
+  topic       String?
+  maxMembers  Int      @default(10)
+  isActive    Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members StudyRoomMember[]
+
+  @@map("study_rooms")
+}
+
+model StudyRoomMember {
+  id        String   @id @default(cuid())
+  userId    String
+  roomId    String
+  joinedAt  DateTime @default(now())
+  leftAt    DateTime?
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room StudyRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roomId])
+  @@map("study_room_members")
+}
+
+// ── CHALLENGE ────────────────────────────────────────────
+model Challenge {
+  id          String          @id @default(cuid())
+  fromUserId  String
+  toUserId    String
+  title       String
+  description String?
+  goal        Int             // e.g. 7 (days), 3 (tests)
+  progress    Int             @default(0)
+  status      String          @default("PENDING")
+  expiresAt   DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  fromUser User @relation("ChallengeFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("ChallengeTo",   fields: [toUserId],   references: [id], onDelete: Cascade)
+
+  @@map("challenges")
+}
+
+
+
+// ── ANALYTICS ENTRY ──────────────────────────────────────
+model AnalyticsEntry {
+  id           String   @id @default(cuid())
+  userId       String
+  date         DateTime @default(now())
+  studyHours   Float    @default(0)
+  tasksCompleted Int    @default(0)
+  xpEarned     Int      @default(0)
+  avgMood      Float?
+  avgStress    Float?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("analytics_entries")
+}
